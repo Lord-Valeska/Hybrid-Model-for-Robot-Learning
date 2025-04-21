@@ -7,7 +7,7 @@ from tqdm import tqdm
 import os
 import matplotlib.pyplot as plt
 
-from dataset import process_data_single_step  
+from dataset import process_data_single_step, read_data
 from models import HybridDynamicsModel   
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -19,6 +19,9 @@ class PoseLoss(nn.Module):
 
     def forward(self, pose_pred, pose_target):
         pose_loss = None
+        pose_pred   = pose_pred.float()
+        pose_target = pose_target.float()
+
         loss_x = F.mse_loss(pose_pred[:, 0], pose_target[:, 0])
         loss_y = F.mse_loss(pose_pred[:, 1], pose_target[:, 1])
         pose_loss = loss_x + loss_y
@@ -109,15 +112,14 @@ def train_model(model, train_dataloader, val_dataloader, num_epochs=100, lr=1e-3
 
 if __name__ == "__main__":
     # Load your collected_data (list of dicts with 'states' and 'actions')
-    collected = np.load('collected_data.npy', allow_pickle=True)
-    collected_data = collected.tolist()
+    collected_data = read_data('./data.csv')
+    print(collected_data[0]['states'].shape, collected_data[0]['actions'].shape)
 
-    train_loader, val_loader = process_data_single_step(collected_data, batch_size=64)
+    train_loader, val_loader = process_data_single_step(collected_data, batch_size=2048)
 
-    dt = 0.01
     state_dim  = collected_data[0]['states'].shape[1]
     action_dim = collected_data[0]['actions'].shape[1]
-    model = HybridDynamicsModel(state_dim, action_dim, dt=dt).to(device)
+    model = HybridDynamicsModel(state_dim, action_dim).to(device)
 
     pose_loss = PoseLoss()
     pose_loss = SingleStepLoss(pose_loss).to(device)

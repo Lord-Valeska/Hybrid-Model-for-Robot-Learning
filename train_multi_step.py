@@ -7,7 +7,7 @@ from tqdm import tqdm
 import os
 import matplotlib.pyplot as plt
 
-from dataset import process_data_multiple_step  
+from dataset import process_data_multiple_step, read_data  
 from models import HybridDynamicsModel 
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -19,6 +19,9 @@ class PoseLoss(nn.Module):
 
     def forward(self, pose_pred, pose_target):
         pose_loss = None
+        pose_pred   = pose_pred.float()
+        pose_target = pose_target.float()
+        
         loss_x = F.mse_loss(pose_pred[:, 0], pose_target[:, 0])
         loss_y = F.mse_loss(pose_pred[:, 1], pose_target[:, 1])
         pose_loss = loss_x + loss_y
@@ -120,10 +123,9 @@ if __name__ == "__main__":
 
     train_loader, val_loader = process_data_multiple_step(collected_data, batch_size=64)
 
-    dt = 0.01
     state_dim  = collected_data[0]['states'].shape[1]
     action_dim = collected_data[0]['actions'].shape[1]
-    model = HybridDynamicsModel(state_dim, action_dim, dt=dt).to(device)
+    model = HybridDynamicsModel(state_dim, action_dim).to(device)
 
     pose_loss = PoseLoss()
     pose_loss = MultiStepLoss(pose_loss, discount=0.9).to(device)

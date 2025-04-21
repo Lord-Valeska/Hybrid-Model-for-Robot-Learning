@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -163,3 +164,36 @@ def process_data_multiple_step(collected_data, batch_size=500, num_steps=4):
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     return train_loader, val_loader
+
+def read_data(file_path, seq_len=100):
+    """
+    :param file_path: str, shape = (N,9)
+    :param seq_len: int, 
+    :return: List[dict], 
+             - "states": ndarray(seq_len, 6)
+             - "actions": ndarray(seq_len, 3)
+    """
+    df = pd.read_csv(file_path, header=None, skiprows=1)
+    arr = df.values  # shape (T,9)
+    T, C = arr.shape
+    if C != 10:
+        raise ValueError(f"Expected 10 columns (including time), got {C}")
+
+    df = df.dropna(subset=[7, 8, 9])
+
+    arr9 = arr[:, 1:]  # shape = (T,9)
+
+    states  = arr9[:, :6].astype(np.float64)  # enc1–3, x–z
+    actions = arr9[:, 6:].astype(np.float64)  # a1–3
+
+    num_traj = T // seq_len
+    trajectories = []
+    for i in range(num_traj):
+        s = i * seq_len
+        e = s + seq_len
+        trajectories.append({
+            'states':  states[s:e],   # (seq_len,6)
+            'actions': actions[s:e-1],  # (seq_len,3)
+        })
+
+    return trajectories
