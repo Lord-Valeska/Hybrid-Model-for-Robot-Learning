@@ -1,7 +1,7 @@
 % 1) 圆台参数
 n_circles = 100;
-z_max     = 80;    z_min     = 60;
-diam_max  = 30;    diam_min  = 10;
+z_max     = 120;    z_min     = 100;
+diam_max  = 10;    diam_min  = 1;
 
 z_lin   = linspace(z_max, z_min, n_circles);
 r_lin   = linspace(diam_min/2, diam_max/2, n_circles);
@@ -25,7 +25,7 @@ step_len = 1;    n_steps = 50;
 
 % 4) containers
 trajectories = cell(n_circles,1);          % 每元 struct: p、q、angle、dAngle
-big_dAngle   = zeros(n_circles*n_steps, 4);% 轨迹ID | Δθ1 Δθ2 Δθ3
+big_dAngle = zeros(n_circles * (n_steps + 1), 4);% 轨迹ID | Δθ1 Δθ2 Δθ3
 row_ptr      = 1;
 
 colors = lines(n_circles);
@@ -56,13 +56,13 @@ for idx = 1:n_circles
     end
     
     % 4.3 角度增量
-    dAng = diff(Ang,1,1);                  % 50×3
+    dAng = [ Ang(1, :); diff(Ang, 1, 1) ];  % 51×3
     
     % 4.4 累加进“大矩阵”以便一次写 CSV
-    rows = row_ptr : row_ptr+n_steps-1;    % n_steps 行
+    rows = row_ptr : row_ptr + n_steps;      % n_steps 行
     big_dAngle(rows, 1) = idx;             % 第一列存轨迹编号
     big_dAngle(rows, 2:4) = dAng;
-    row_ptr = row_ptr + n_steps;
+    row_ptr = row_ptr + (n_steps+1);
     
     % 4.5 打包 & 画轨迹
     trajectories{idx} = struct('p',P,'q',Q,'angle',Ang,'dAngle',dAng);
@@ -75,7 +75,7 @@ hold off;
 big_dAngle(:,2:4) = round(big_dAngle(:,2:4), 4);
 
 % 打开文件
-fid = fopen('command_all.csv','w');
+fid = fopen('command_all2.csv','w');
 
 % 写入，第一列整数，其余三列保留 4 位小数
 fmt = '%d,%.4f,%.4f,%.4f\n';
@@ -88,3 +88,4 @@ disp('Saved command_all.csv with 4‑decimal precision (using fprintf)');
 sel = 10;
 dA  = trajectories{sel}.dAngle;        % 50×3
 disp(['First Δangle of traj ',num2str(sel),': ', mat2str(dA(1,:))]);
+

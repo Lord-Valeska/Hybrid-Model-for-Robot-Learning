@@ -4,8 +4,8 @@ import torch.nn as nn
 from scipy.optimize import fsolve
 
 # Geometry parameters (from the MATLAB code)
-d = 22    # Distance from the chamber center to the base platform center
-aa = 0    # Offset from base to the chamber cross-section (set to zero as in MATLAB)
+d = 28    # Distance from the chamber center to the base platform center
+aa = 43.5   # Offset from base to the chamber cross-section (set to zero as in MATLAB)
 
 def end_effector_equations(vars, q_meas, d):
     """
@@ -22,6 +22,10 @@ def end_effector_equations(vars, q_meas, d):
     eq3 = theta*(1.0/k - d*np.cos(np.pi/6 + phi)) - q3
 
     return [eq1, eq2, eq3]
+
+def angle_to_length (angleIN):
+
+    return 1.327e-10*angleIN **5 - 7.894e-08*angleIN **4 + 1.314e-05*angleIN **3 - 0.001259*angleIN**2 - 0.1502*angleIN + 80.92
 
 def solve_end_effector(q_meas, d, init_guess=(0.0, 0.05, 0.3)):
     """
