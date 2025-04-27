@@ -8,23 +8,35 @@ import os
 import matplotlib.pyplot as plt
 
 from dataset import process_data_single_step, read_data
-from models import HybridDynamicsModel   
+from models_xyz import HybridDynamicsModel   
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Using device: {device}")
 
 class PoseLoss(nn.Module):
-    def __init__(self):
+    def __init__(self, w_enc=0.0, w_xyz=1.0):
         super().__init__()
+        self.w_enc = w_enc
+        self.w_xyz = w_xyz
 
     def forward(self, pose_pred, pose_target):
         pose_loss = None
         pose_pred   = pose_pred.float()
         pose_target = pose_target.float()
 
-        loss_x = F.mse_loss(pose_pred[:, 0], pose_target[:, 0])
-        loss_y = F.mse_loss(pose_pred[:, 1], pose_target[:, 1])
-        pose_loss = loss_x + loss_y
+        loss_a1 = F.mse_loss(pose_pred[:, 0], pose_target[:, 0])
+        loss_a2 = F.mse_loss(pose_pred[:, 1], pose_target[:, 1])
+        loss_a3 = F.mse_loss(pose_pred[:, 2], pose_target[:, 2])
+        loss_x = F.mse_loss(pose_pred[:, 3], pose_target[:, 3])
+        loss_y = F.mse_loss(pose_pred[:, 4], pose_target[:, 4])
+        loss_z = F.mse_loss(pose_pred[:, 5], pose_target[:, 5])
+        # print(f"loss_x: {loss_x.item()}, loss_y: {loss_y.item()}, loss_z: {loss_z.item()}")
+        # print(f"pose_pred: {pose_pred[:, 0]}, pose_target: {pose_target[:, 0]}")
+        # print(f"pose_pred: {pose_pred[:, 1]}, pose_target: {pose_target[:, 1]}")
+        # print(f"pose_pred: {pose_pred[:, 2]}, pose_target: {pose_target[:, 2]}")
+        pose_loss = self.w_enc * (loss_a1 + loss_a2 + loss_a3) + \
+                    self.w_xyz * (loss_x + loss_y + loss_z)
+        # pose_loss = F.mse_loss(pose_pred, pose_target, reduction='mean')
         return pose_loss
 
 class SingleStepLoss(nn.Module):
@@ -112,19 +124,31 @@ def train_model(model, train_dataloader, val_dataloader, num_epochs=100, lr=1e-3
 
 if __name__ == "__main__":
     # Load your collected_data (list of dicts with 'states' and 'actions')
-    collected_data = read_data('./data.csv')
-    print(collected_data[0]['states'].shape, collected_data[0]['actions'].shape)
+    file_paths = ['data/merged_data_test.csv']
+    collected_data = read_data(file_paths=file_paths)
+    # print(collected_data[0]['states'][0], collected_data[0]['actions'][0], collected_data[0]['states'][1])
 
-    train_loader, val_loader = process_data_single_step(collected_data, batch_size=2048)
+    train_loader, val_loader = process_data_single_step(collected_data, batch_size=1)
+
+    # number of batches
+    n_train_batches = len(train_loader)
+    n_val_batches   = len(val_loader)
+
+    # number of samples
+    n_train_samples = len(train_loader.dataset)
+    n_val_samples   = len(val_loader.dataset)
+
+    print(f"Train loader: {n_train_samples} samples → {n_train_batches} batches")
+    print(f"Val   loader: {n_val_samples} samples → {n_val_batches} batches")
 
     state_dim  = collected_data[0]['states'].shape[1]
     action_dim = collected_data[0]['actions'].shape[1]
-    model = HybridDynamicsModel(state_dim, action_dim).to(device)
+    model = HybridDynamicsModel(action_dim).to(device)
 
     pose_loss = PoseLoss()
     pose_loss = SingleStepLoss(pose_loss).to(device)
 
-    LR = 0.001
+    LR = 0.0001
     NUM_EPOCHS = 1000
     train_losses, val_losses = train_model(model,
                                            train_loader, val_loader, num_epochs=NUM_EPOCHS, lr=LR)
@@ -147,5 +171,5 @@ if __name__ == "__main__":
 
     # save model:
     os.makedirs('./saved_models', exist_ok=True)
-    save_path = './saved_models/single_step_dynamics_model.pt'
+    save_path = './saved_models/single_step_dynamics_model_1.pt'
     torch.save(model.state_dict(), save_path)

@@ -65,7 +65,7 @@ class MultiStepDynamicsDataset(Dataset):
     }
     """
 
-    def __init__(self, collected_data, num_steps=4):
+    def __init__(self, collected_data, num_steps=3):
         self.data = collected_data
         self.trajectory_length = self.data[0]['actions'].shape[0] - num_steps + 1
         self.num_steps = num_steps
@@ -165,35 +165,41 @@ def process_data_multiple_step(collected_data, batch_size=500, num_steps=4):
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     return train_loader, val_loader
 
-def read_data(file_path, seq_len=100):
+def read_data(file_paths, seq_len=51):
     """
-    :param file_path: str, shape = (N,9)
-    :param seq_len: int, 
-    :return: List[dict], 
-             - "states": ndarray(seq_len, 6)
-             - "actions": ndarray(seq_len, 3)
+    :param file_paths: str or List[str], paths to one or more CSV files
+                       each file must have columns: traj, encoder1-3, X, Y, Z, angle1-3
+    :return: List[dict], each with
+             - "states": ndarray(N, 6)
+             - "actions": ndarray(N-1, 3)  # first action ignored
     """
-    df = pd.read_csv(file_path, header=None, skiprows=1)
-    arr = df.values  # shape (T,9)
-    T, C = arr.shape
-    if C != 10:
-        raise ValueError(f"Expected 10 columns (including time), got {C}")
+    if isinstance(file_paths, str):
+        file_paths = [file_paths]
 
-    df = df.dropna(subset=[7, 8, 9])
+    all_trajectories = []
 
-    arr9 = arr[:, 1:]  # shape = (T,9)
+    for file_path in file_paths:
+        # Read the merged data (with header)
+        df = pd.read_csv(file_path)
+        # Drop rows with missing actions
+        df = df.dropna(subset=['angle1', 'angle2', 'angle3'])
 
-    states  = arr9[:, :6].astype(np.float64)  # enc1–3, x–z
-    actions = arr9[:, 6:].astype(np.float64)  # a1–3
+        # Group by trajectory ID
+        for traj_id, group in df.groupby('traj'):
+            # Ensure original ordering
+            group = group.sort_index()
 
-    num_traj = T // seq_len
-    trajectories = []
-    for i in range(num_traj):
-        s = i * seq_len
-        e = s + seq_len
-        trajectories.append({
-            'states':  states[s:e],   # (seq_len,6)
-            'actions': actions[s:e-1],  # (seq_len,3)
-        })
+            states  = group[['encoder1', 'encoder2', 'encoder3', 'X', 'Y', 'Z']].values.astype(np.float64)
+            actions_all = group[['angle1', 'angle2', 'angle3']].values.astype(np.float64)
 
-    return trajectories
+            # Ignore the first action so that actions has one fewer row than states
+            actions = actions_all[1:]
+
+            all_trajectories.append({
+                'states': states,   # (N,6)
+                'actions': actions, # (N-1,3)
+            })
+
+    total_traj = len(all_trajectories)
+    print(f"Stored and returning {total_traj} trajectories from {len(file_paths)} file(s).")
+    return all_trajectories

@@ -16,29 +16,32 @@ def end_effector_equations(vars, q_meas, d):
     """
     phi, k, theta = vars
     q1, q2, q3 = q_meas
-
     eq1 = theta*(1.0/k - d*np.sin(phi)) - q1
     eq2 = theta*(1.0/k + d*np.sin(np.pi/3 + phi)) - q2
     eq3 = theta*(1.0/k - d*np.cos(np.pi/6 + phi)) - q3
-
     return [eq1, eq2, eq3]
 
-def angle_to_length (angleIN):
-
-    return 1.327e-10*angleIN **5 - 7.894e-08*angleIN **4 + 1.314e-05*angleIN **3 - 0.001259*angleIN**2 - 0.1502*angleIN + 80.92
+def angle_to_length(angleIN):
+    """
+    Polynomial mapping from actuator angle to cable length.
+    """
+    return (1.327e-10 * angleIN**5
+          - 7.894e-08 * angleIN**4
+          + 1.314e-05 * angleIN**3
+          - 0.001259  * angleIN**2
+          - 0.1502    * angleIN
+          + 80.92)
 
 def solve_end_effector(q_meas, d, init_guess=(0.0, 0.05, 0.3)):
     """
     Given actuator lengths q_meas = [q1, q2, q3], solve for phi, k, theta.
-    Then compute the end–effector position (x, y, z) and its normal vector.
-    Enforces: k > 0, theta < 0, and z > 0.
+    Returns (x, y, z, phi, k_eff, theta_eff).
     """
-    # Special case: all three lengths are nearly equal
+    # Special case: nearly equal lengths → straight pose
     if abs(q_meas[0]-q_meas[1]) < 1e-6 and abs(q_meas[1]-q_meas[2]) < 1e-6:
-        base_normal = np.array([0, 0, 1])
-        pos = q_meas[0] * base_normal  # along z
-        ee_normal = base_normal.copy()
-        return (pos[0], pos[1], pos[2], 0.0, 0.0, 0.0, ee_normal)
+        base_normal = np.array([0.0, 0.0, 1.0])
+        pos = q_meas[0] * base_normal
+        return (pos[0], pos[1], pos[2], 0.0, 0.0, 0.0)
 
     sol, info, ier, mesg = fsolve(
         end_effector_equations, init_guess,
@@ -51,40 +54,50 @@ def solve_end_effector(q_meas, d, init_guess=(0.0, 0.05, 0.3)):
         raise RuntimeError(f"physics solver failed to converge: {mesg}")
 
     phi, k, theta = sol
-
-    # Enforce sign conventions:
-    k_eff = abs(k)         # curvature > 0
-    theta_eff = -theta     # ensure theta is negative
-
-    # Constant curvature backbone:
-    # In a plane, if the curvature is k (R = 1/k) and the bending angle is |theta_eff|,
-    # a common parameterization is:
-    #   x_local(s) = (1 - cos(s)) / k_eff,   z_local(s) = sin(s) / k_eff,  with s in [0, |theta_eff|]
-    # Our computed tip is:
-    #   x_tip = x_local(|theta_eff|)*cos(phi), y_tip = x_local(|theta_eff|)*sin(phi), z_tip = z_local(|theta_eff|)
+    k_eff = abs(k)
+    theta_eff = -theta
     r0 = (1 - np.cos(abs(theta_eff))) / k_eff
     z0 = np.sin(abs(theta_eff)) / k_eff
-
     x = r0 * np.cos(phi)
     y = r0 * np.sin(phi)
     z = abs(z0)
-
     return (x, y, z, phi, k_eff, theta_eff)
 
 class PCCModel(nn.Module):
+    """
+    Pure physics mapping from cable lengths to end-effector pose.
+    Uses the previous xyz to initialize the solver for continuity.
+    """
     def __init__(self, d):
         super().__init__()
         self.d = d
 
-    def forward(self, q: torch.Tensor):
+    def forward(self, q: torch.Tensor, prev_xyz: torch.Tensor=None):
         single = (q.ndim == 1)
+        # make a numpy copy for solver
         q_np = q.detach().cpu().numpy()
         if single:
             q_np = q_np.reshape(1,3)
 
+        # prepare prev_xyz numpy if provided
+        if prev_xyz is not None:
+            prev_np = prev_xyz.detach().cpu().numpy()
+            if single:
+                prev_np = prev_np.reshape(1,3)
+
         poses = []
-        for qi in q_np:
-            x, y, z, *_ = solve_end_effector(qi, self.d)
+        for i, qi in enumerate(q_np):
+            if prev_xyz is not None:
+                # derive init_guess from previous xyz
+                p = prev_np[i]
+                phi0 = np.arctan2(p[1], p[0])
+                r_xy = np.linalg.norm(p[:2])
+                k0 = 1.0 / (r_xy + 1e-6)
+                theta0 = r_xy * k0
+                init_guess = (phi0, k0, theta0)
+                x, y, z, *_ = solve_end_effector(qi, self.d, init_guess=init_guess)
+            else:
+                x, y, z, *_ = solve_end_effector(qi, self.d)
             poses.append([x, y, z])
 
         pos = torch.tensor(poses, dtype=q.dtype, device=q.device)
@@ -94,45 +107,46 @@ class ResidualNet(nn.Module):
     def __init__(self, state_dim, control_dim, hidden_sizes=(64,64)):
         super().__init__()
         layers = []
-        inp_dim = state_dim + control_dim
+        inp_dim = state_dim + control_dim    
         for h in hidden_sizes:
             layers += [nn.Linear(inp_dim, h), nn.ReLU()]
             inp_dim = h
-        layers += [nn.Linear(inp_dim, state_dim)]
+        layers += [nn.Linear(inp_dim, state_dim)]  
         self.net = nn.Sequential(*layers)
 
     def forward(self, x, u):
-        x = x.float()
-        u = u.float()
-        xu = torch.cat([x, u], dim=-1)
-        return self.net(xu)
+        # x: (...,6), u: (...,control_dim)
+        xu = torch.cat([x.float(), u.float()], dim=-1)
+        return self.net(xu)  # (...,3)
 
 class HybridDynamicsModel(nn.Module):
+    """
+    Combines a physics-based model (PCCModel) with a learned residual.
+    """
     def __init__(self, state_dim, control_dim):
         super().__init__()
-        self.physics = PCCModel(d)
+        self.physics  = PCCModel(d)
         self.residual = ResidualNet(state_dim, control_dim)
+        # self.res_scale = nn.Parameter(torch.tensor(10.0))
 
     def forward(self, x, u):
-        x = x.float()
-        u = u.float()
+        enc = x[..., :3].float()
+        xyz = x[..., 3:].float()
+        next_enc = enc + u.float()
+        next_lengths = angle_to_length(next_enc)
 
-        enc = x[..., :3]    # (...,3)
-        xyz = x[..., 3:]    # (...,3)
-        next_enc = enc + u  # (...,3)
-
+        # pass prev xyz into physics solver
         try:
-            phys_xyz = self.physics(next_enc)
+            phys_xyz = self.physics(next_lengths)
         except RuntimeError:
-            # fallback: skip physics update, keep current xyz
-            print("Physics model failed, using current xyz")
+            print("Physics solver failed, using current xyz")
             phys_xyz = xyz
 
-        delta = self.residual(x, u)       # (...,6)
-        delta_enc = delta[..., :3]        # (...,3)
-        delta_xyz = delta[..., 3:]        # (...,3)
+        delta = self.residual(x, u)
+        delta_xyz = delta[..., :3]  # (...,3)
+        delta_enc = delta[..., 3:]  # (...,3)
+        # print(f"delta_enc: {delta_xyz}")
 
-        next_enc = next_enc + delta_enc   # (...,3)
-        next_xyz = phys_xyz + delta_xyz   # (...,3)
-
+        next_enc = next_enc + delta_enc
+        next_xyz = phys_xyz + delta_xyz
         return torch.cat([next_enc, next_xyz], dim=-1)  # (...,6)
