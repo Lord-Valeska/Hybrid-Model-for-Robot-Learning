@@ -126,7 +126,7 @@ def process_data_single_step(collected_data, batch_size=500):
     val_loader = None
     dataset = SingleStepDynamicsDataset(collected_data)
     train_dataset, val_dataset = random_split(dataset, [0.8, 0.2])
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     return train_loader, val_loader
 
@@ -202,4 +202,5 @@ def read_data(file_paths, seq_len=51):
 
     total_traj = len(all_trajectories)
     print(f"Stored and returning {total_traj} trajectories from {len(file_paths)} file(s).")
+    
     return all_trajectories

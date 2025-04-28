@@ -23,8 +23,8 @@ def mpcr_forward(inputs):
     # Constants
     r = 28e-3  # meters
     c_n = 6.0
-    bottom_length = 0.026
-    top_length = 0.0175
+    bottom_length = 0.030
+    top_length = 0.021
     # Base angles
     a1 = math.pi / 2.0
     a2 = a1 + 2.0 * math.pi / 3.0
@@ -104,32 +104,33 @@ class PCCModel(nn.Module):
         # Collapse batch dim if needed
         return pos.squeeze(0) if single else pos
 
-
 class ResidualNet(nn.Module):
-    def __init__(self, state_dim, control_dim, hidden_sizes=(64,64,64)):
+    """
+    Learns only Δxyz (3-vector) from current xyz + control u.
+    """
+    def __init__(self, control_dim, hidden_sizes=(128,128,128,128)):
         super().__init__()
         layers = []
-        inp_dim = state_dim + control_dim    
+        inp_dim = 3 + control_dim
         for h in hidden_sizes:
             layers += [nn.Linear(inp_dim, h), nn.ReLU()]
             inp_dim = h
-        layers += [nn.Linear(inp_dim, state_dim)]  
+        layers += [nn.Linear(inp_dim, 3)]
         self.net = nn.Sequential(*layers)
 
-    def forward(self, x, u):
-        # x: (...,6), u: (...,control_dim)
-        xu = torch.cat([x.float(), u.float()], dim=-1)
-        return self.net(xu)  # (...,6)
+    def forward(self, xyz, u):
+        xu = torch.cat([xyz.float(), u.float()], dim=-1)
+        return self.net(xu)
+
 
 class HybridDynamicsModel(nn.Module):
     """
     Combines a physics-based model (PCCModel) with a learned residual.
     """
-    def __init__(self, state_dim, control_dim):
+    def __init__(self, control_dim):
         super().__init__()
         self.physics  = PCCModel()
-        self.residual = ResidualNet(state_dim, control_dim)
-        # self.res_scale = nn.Parameter(torch.tensor(10.0))
+        self.residual = ResidualNet(control_dim)
 
     def forward(self, x, u):
         enc = x[..., :3].float()
@@ -137,18 +138,11 @@ class HybridDynamicsModel(nn.Module):
         next_enc = enc + u.float()
         next_lengths = angle_to_length(next_enc)
 
-        # pass prev xyz into physics solver
-        try:
-            phys_xyz = self.physics(next_lengths)
-        except RuntimeError:
-            print("Physics solver failed, using current xyz")
-            phys_xyz = xyz
+        # physics returns (poses, updated_guesses)
+        phys_xyz = self.physics(next_lengths)
 
-        delta = self.residual(x, u)
-        delta_xyz = delta[..., :3]  # (...,3)
-        delta_enc = delta[..., 3:]  # (...,3)
-        # print(f"delta_enc: {delta_xyz}")
-
-        next_enc = next_enc + delta_enc
+        delta_xyz = self.residual(xyz, u)
+        # print(delta_xyz)
         next_xyz = phys_xyz + delta_xyz
-        return torch.cat([next_enc, next_xyz], dim=-1)  # (...,6)
+        out = torch.cat([next_enc, next_xyz], dim=-1)
+        return out

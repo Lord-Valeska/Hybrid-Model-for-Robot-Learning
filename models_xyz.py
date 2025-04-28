@@ -5,7 +5,7 @@ from scipy.optimize import fsolve
 
 # Geometry parameters (from the MATLAB code)
 d = 28    # Distance from the chamber center to the base platform center
-aa = 43.5   # Offset from base to the chamber cross-section (set to zero as in MATLAB)
+aa = 50   # Offset from base to the chamber cross-section (set to zero as in MATLAB)
 
 def end_effector_equations(vars, q_meas, d):
     """
@@ -32,16 +32,12 @@ def angle_to_length(angleIN):
           - 0.1502    * angleIN
           + 80.92)
 
-def solve_end_effector(q_meas, d, init_guess=(0.0, 0.05, 0.3)):
-    """
-    Given actuator lengths q_meas = [q1, q2, q3], solve for phi, k, theta.
-    Returns (x, y, z, phi, k_eff, theta_eff).
-    """
-    # Special case: nearly equal lengths → straight pose
+def solve_end_effector(q_meas, init_guess=(0.0, 0.0127, 1.0)):
+    # Straight posture:
     if abs(q_meas[0]-q_meas[1]) < 1e-6 and abs(q_meas[1]-q_meas[2]) < 1e-6:
-        base_normal = np.array([0.0, 0.0, 1.0])
-        pos = q_meas[0] * base_normal
-        return (pos[0], pos[1], pos[2], 0.0, 0.0, 0.0)
+        # equal leg lengths → pure z-offset
+        z = q_meas[0] + aa
+        return (0.0, 0.0, z, 0.0, 0.0, 0.0)
 
     sol, info, ier, mesg = fsolve(
         end_effector_equations, init_guess,
@@ -56,11 +52,17 @@ def solve_end_effector(q_meas, d, init_guess=(0.0, 0.05, 0.3)):
     phi, k, theta = sol
     k_eff = abs(k)
     theta_eff = -theta
-    r0 = (1 - np.cos(abs(theta_eff))) / k_eff
-    z0 = np.sin(abs(theta_eff)) / k_eff
-    x = r0 * np.cos(phi)
-    y = r0 * np.sin(phi)
-    z = abs(z0)
+    θ = abs(theta_eff)                       # bending angle magnitude
+
+    # radius and height of the arc from the PCC model
+    r0 = (1 - np.cos(θ)) / k_eff
+    z0 = np.sin(θ) / k_eff
+
+    # now *add* the cross-section offset aa:
+    x = r0 * np.cos(phi) + aa * np.sin(θ) * np.cos(phi)
+    y = r0 * np.sin(phi) + aa * np.sin(θ) * np.sin(phi)
+    z = z0            + aa * np.cos(θ)
+
     return (x, y, z, phi, k_eff, theta_eff)
 
 class PCCModel(nn.Module):
@@ -68,9 +70,8 @@ class PCCModel(nn.Module):
     Pure physics mapping from cable lengths to end-effector pose.
     Uses the previous xyz to initialize the solver for continuity.
     """
-    def __init__(self, d):
+    def __init__(self):
         super().__init__()
-        self.d = d
 
     def forward(self, q: torch.Tensor, prev_xyz: torch.Tensor=None):
         single = (q.ndim == 1)
@@ -95,9 +96,9 @@ class PCCModel(nn.Module):
                 k0 = 1.0 / (r_xy + 1e-6)
                 theta0 = r_xy * k0
                 init_guess = (phi0, k0, theta0)
-                x, y, z, *_ = solve_end_effector(qi, self.d, init_guess=init_guess)
+                x, y, z, *_ = solve_end_effector(qi, init_guess=init_guess)
             else:
-                x, y, z, *_ = solve_end_effector(qi, self.d)
+                x, y, z, *_ = solve_end_effector(qi)
             poses.append([x, y, z])
 
         pos = torch.tensor(poses, dtype=q.dtype, device=q.device)
@@ -107,7 +108,7 @@ class ResidualNet(nn.Module):
     """
     Learns only Δxyz (3-vector) from current xyz + control u.
     """
-    def __init__(self, control_dim, hidden_sizes=(128,128)):
+    def __init__(self, control_dim, hidden_sizes=(64,64,64)):
         super().__init__()
         layers = []
         inp_dim = 3 + control_dim    # only xyz plus u
@@ -128,7 +129,7 @@ class HybridDynamicsModel(nn.Module):
     """
     def __init__(self, control_dim):
         super().__init__()
-        self.physics  = PCCModel(d)
+        self.physics  = PCCModel()
         self.residual = ResidualNet(control_dim)
         # self.res_scale = nn.Parameter(torch.tensor(10.0))
 

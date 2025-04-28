@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import torch
-from models_xyz import HybridDynamicsModel  # adjust import as needed
+from models_xyz_v2 import HybridDynamicsModel  # adjust import as needed
 
 def test_saved_model_single(model_path,
                      received_path,
@@ -50,6 +50,7 @@ def test_saved_model_single(model_path,
         for a in actions:
             u = torch.tensor(a, dtype=torch.float32, device=device)
             nxt = model(current.unsqueeze(0), u.unsqueeze(0)).squeeze(0)
+            # print(current.cpu().numpy(), u.cpu().numpy(), nxt.cpu().numpy())
             states.append(nxt.cpu().numpy())
             current = nxt
 

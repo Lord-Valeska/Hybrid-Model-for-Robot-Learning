@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import torch
-from models import PCCModel, angle_to_length
+from models_xyz_v2 import PCCModel, angle_to_length
 
 def baseline_pcc_from_angle_increments(received_path,
                                        command_path,
@@ -14,7 +14,7 @@ def baseline_pcc_from_angle_increments(received_path,
     and prints each (x,y,z) step.
     """
     # 0) Prepare model
-    model = PCCModel(d).to(device)
+    model = PCCModel().to(device)
     model.eval()
 
     # 1) Load initial angles (first row: cols [traj, enc1, enc2, enc3])
@@ -52,11 +52,11 @@ def baseline_pcc_from_angle_increments(received_path,
     return angles, xyz_pred
 
 
-# if __name__ == "__main__":
-#     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-#     angles, xyz = baseline_pcc_from_angle_increments(
-#         received_path = 'data/received_data_test.csv',
-#         command_path  = 'data/command_test.csv',
-#         d             = 28.0,
-#         device        = device
-#     )
+if __name__ == "__main__":
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    angles, xyz = baseline_pcc_from_angle_increments(
+        received_path = 'data/received_data_test.csv',
+        command_path  = 'data/command_test.csv',
+        d             = 28.0,
+        device        = device
+    )

@@ -8,16 +8,17 @@ import os
 import matplotlib.pyplot as plt
 
 from dataset import process_data_single_step, read_data
-from models_xyz import HybridDynamicsModel   
+from models_xyz_v2 import HybridDynamicsModel   
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Using device: {device}")
 
 class PoseLoss(nn.Module):
-    def __init__(self, w_enc=0.0, w_xyz=1.0):
+    def __init__(self, w_enc=0,  w_xy=0.0001, w_z=1):
         super().__init__()
         self.w_enc = w_enc
-        self.w_xyz = w_xyz
+        self.w_xy = w_xy
+        self.w_z = w_z
 
     def forward(self, pose_pred, pose_target):
         pose_loss = None
@@ -35,7 +36,8 @@ class PoseLoss(nn.Module):
         # print(f"pose_pred: {pose_pred[:, 1]}, pose_target: {pose_target[:, 1]}")
         # print(f"pose_pred: {pose_pred[:, 2]}, pose_target: {pose_target[:, 2]}")
         pose_loss = self.w_enc * (loss_a1 + loss_a2 + loss_a3) + \
-                    self.w_xyz * (loss_x + loss_y + loss_z)
+                    self.w_xy * (loss_x + loss_y ) + \
+                    self.w_z * (loss_z)
         # pose_loss = F.mse_loss(pose_pred, pose_target, reduction='mean')
         return pose_loss
 
@@ -125,7 +127,7 @@ def train_model(model, train_dataloader, val_dataloader, num_epochs=100, lr=1e-3
 if __name__ == "__main__":
     # Load your collected_data (list of dicts with 'states' and 'actions')
     file_paths = ['data/merged_data_test.csv']
-    collected_data = read_data(file_paths=file_paths)
+    collected_data= read_data(file_paths=file_paths)
     # print(collected_data[0]['states'][0], collected_data[0]['actions'][0], collected_data[0]['states'][1])
 
     train_loader, val_loader = process_data_single_step(collected_data, batch_size=1)
@@ -148,8 +150,8 @@ if __name__ == "__main__":
     pose_loss = PoseLoss()
     pose_loss = SingleStepLoss(pose_loss).to(device)
 
-    LR = 0.0001
-    NUM_EPOCHS = 1000
+    LR = 0.00001
+    NUM_EPOCHS = 1500
     train_losses, val_losses = train_model(model,
                                            train_loader, val_loader, num_epochs=NUM_EPOCHS, lr=LR)
     
