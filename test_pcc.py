@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import torch
-from models_xyz_v2 import PCCModel, angle_to_length
+from models import PCCModel, angle_to_length
 
 def baseline_pcc_from_angle_increments(received_path,
                                        command_path,

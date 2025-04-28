@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
 from test_model_single import test_saved_model_single
-from test_model_multi import test_saved_model_multi
 from test_pcc import baseline_pcc_from_angle_increments
 
 # Set device
@@ -13,7 +12,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # 1) Hybrid model (single-step) rollout
 hybrid_states = test_saved_model_single(
-    model_path    = 'saved_models/single_step_dynamics_model_1.pt',
+    model_path    = 'saved_models/single_step_dynamics_model.pt',
     received_path = 'data/received_data_test.csv',
     marker_path   = 'data/cleaned_xyz_test.csv',
     command_path  = 'data/command_test.csv',
@@ -85,6 +84,6 @@ ax.set_xlabel('X')
 ax.set_ylabel('Y')
 ax.set_zlabel('Z')
 ax.legend()
-plt.title('Trajectory Comparison: Cleaned vs PCC vs Hybrid Single vs Multi-step')
+plt.title('Trajectory Comparison: Ground Truth vs PCC vs Hybrid Single-step')
 plt.tight_layout()
 plt.show()

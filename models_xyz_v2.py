@@ -21,10 +21,10 @@ def mpcr_forward(inputs):
     L2 = inputs[1] / 1000.0
     L3 = inputs[2] / 1000.0
     # Constants
-    r = 28e-3  # meters
-    c_n = 6.0
-    bottom_length = 0.030
-    top_length = 0.021
+    r = 58e-3  # meters
+    c_n = 1.0
+    bottom_length = 0.00000
+    top_length = 0.0001
     # Base angles
     a1 = math.pi / 2.0
     a2 = a1 + 2.0 * math.pi / 3.0
@@ -108,7 +108,7 @@ class ResidualNet(nn.Module):
     """
     Learns only Δxyz (3-vector) from current xyz + control u.
     """
-    def __init__(self, control_dim, hidden_sizes=(128,128,128,128)):
+    def __init__(self, control_dim, hidden_sizes=(128,128)):
         super().__init__()
         layers = []
         inp_dim = 3 + control_dim

@@ -23,8 +23,8 @@ def mpcr_forward(inputs):
     # Constants
     r = 28e-3  # meters
     c_n = 6.0
-    bottom_length = 0.026
-    top_length = 0.0175
+    bottom_length = 0.03
+    top_length = 0.02
     # Base angles
     a1 = math.pi / 2.0
     a2 = a1 + 2.0 * math.pi / 3.0

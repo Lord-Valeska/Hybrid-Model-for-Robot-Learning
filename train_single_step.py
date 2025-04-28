@@ -14,7 +14,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Using device: {device}")
 
 class PoseLoss(nn.Module):
-    def __init__(self, w_enc=0,  w_xy=0.0001, w_z=1):
+    def __init__(self, w_enc=0,  w_xy=1, w_z=1):
         super().__init__()
         self.w_enc = w_enc
         self.w_xy = w_xy
@@ -151,7 +151,7 @@ if __name__ == "__main__":
     pose_loss = SingleStepLoss(pose_loss).to(device)
 
     LR = 0.00001
-    NUM_EPOCHS = 1500
+    NUM_EPOCHS = 1000
     train_losses, val_losses = train_model(model,
                                            train_loader, val_loader, num_epochs=NUM_EPOCHS, lr=LR)
     
